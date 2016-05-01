@@ -63,7 +63,7 @@ _start:
         ; Listen
         mov	rax, __NR_listen
         mov	rdi, [sock]
-        mov	rsi, max_clients
+        mov	rsi, [max_clients]
         syscall
 
 _server_accept:
