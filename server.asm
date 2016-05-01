@@ -11,7 +11,7 @@ CPU     x64
 SECTION .data
         sock            dq      0
         client          dq      0
-        max_clients     dw      10
+        max_clients     db      10
         buflen          equ     512
         buffer          TIMES   buflen  \
                         db      0
