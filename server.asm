@@ -11,11 +11,11 @@ CPU     x64
 SECTION .data
         sock            dq      0
         client          dq      0
-        max_clients     db      10
+        max_clients     dw      10
         buflen          equ     512
-        buffer          TIMES   buflen  \
-                        db      0
-        reclen          db      0
+        __O_RDONLY      equ     00
+        __O_WRONLY      equ     01
+        __O_RDWR        equ     02
         __STDIN         equ     0
         __STDOUT        equ     1
         __IPPROTO_TCP   equ     6
@@ -23,6 +23,7 @@ SECTION .data
         __AF_INET       equ     2
         __NR_read       equ     0
         __NR_write      equ     1
+        __NR_open       equ     2
         __NR_close      equ     3
         __NR_socket     equ     41
         __NR_accept     equ     43
@@ -67,6 +68,16 @@ _start:
         syscall
 
 _server_accept:
+
+        SECTION .data
+
+        reqbuf  TIMES   buflen  \
+                db      0
+        reqlen  dw      0
+
+
+        SECTION .text
+
         ; Accept
         mov     rax, __NR_accept
         mov     rdi, [sock]
@@ -77,20 +88,69 @@ _server_accept:
         jle     _server_close
         mov     [client], rax
 
-        ; Read client request to buffer
+        ; Read client request into request buffer
         mov     rax, __NR_read
         mov     rdi, [client]
-        mov     rsi, buffer
+        mov     rsi, reqbuf
         mov     rdx, buflen
         syscall
-        mov     [reclen], rax
+        mov     [reqlen], rax
 
-        ; Write buffer to client
+        ; Print request headers to stdout
+        mov     rax, __NR_write
+        mov     rdi, __STDOUT
+        mov     rsi, reqbuf
+        mov     rdx, [reqlen]
+        syscall
+
+        jmp _client_close
+
+        ; @TODO handle headers from request buffer
+
+        ; Open index.html into buffer
+        mov     rax, __NR_open
+        mov     rdi, filename
+        mov     rsi, __O_RDONLY
+        syscall
+        cmp     rax, 0
+        jle     _client_close           ; @TODO This should be HTTP 404
+        mov     [filepntr], rax
+
+_read_html:
+
+        SECTION .data
+
+        resbuf  TIMES   buflen  \
+                db      0
+        reslen  dw      0
+
+
+        SECTION .text
+
+        ; Read file contents into response buffer
+        mov     rax, __NR_read
+        mov     rdi, [filepntr]
+        mov     rsi, resbuf
+        mov     rdx, buflen
+        syscall
+
+        cmp     rax, 0                  ; Check for error
+        jl      _client_close           ; Read-error
+
+        mov     [reslen], rax           ; Update response buffer length
+
+        cmp     rax, 0                  ; Continue if done reading
+        jg      _read_html              ; Else, keep on reading!
+
+
+        ; Write output buffer to client
         mov     rax, __NR_write
         mov     rdi, [client]
-        mov     rsi, buffer
-        mov     rdx, [reclen]
+        mov     rsi, resbuf
+        mov     rdx, [reslen]
         syscall
+
+_client_close:
 
         ; Close Client Socket
         mov     rax, __NR_close
@@ -101,6 +161,7 @@ _server_accept:
         jmp      _server_accept
 
 _server_close:
+
         ; Close Server Socket
         mov     rax, __NR_close
         mov     rdi, [sock]
