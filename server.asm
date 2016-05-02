@@ -14,11 +14,16 @@
         filepntr        dq      0
         sock            dq      0
         client          dq      0
-        max_clients     dw      10
-        buflen          equ     512
+        sockopt_off     dw      0
+        sockopt_on      dw      1
+        MAX_CLIENTS     equ     10
+        BUFLEN          equ     512
         __O_RDONLY      equ     00
         __O_WRONLY      equ     01
         __O_RDWR        equ     02
+        __SOL_SOCKET    equ     1
+        __SO_REUSEADDR  equ     2
+        __SO_REUSEPORT  equ     15
         __STDIN         equ     0
         __STDOUT        equ     1
         __IPPROTO_TCP   equ     6
@@ -33,6 +38,7 @@
         __NR_shutdown   equ     48      ; @TODO replace close() with shutdown()
         __NR_bind       equ     49
         __NR_listen     equ     50
+        __NR_setsockopt equ     54
 
 
         SECTION .bss
@@ -66,11 +72,32 @@ _start:
         add     rsp, 12
         pop     rbp
 
+        ; Reuse address and port (i.e., restarting)  -- @TODO refactor
+        mov     rax, __NR_setsockopt
+        mov     rdi, [sock]
+        mov     rsi, __SOL_SOCKET
+        mov     rdx, __SO_REUSEADDR
+        mov     r10, sockopt_on
+        mov     r8, dword 32
+        syscall
+        cmp     rax, 0
+        jne     _server_close
+
+        mov     rax, __NR_setsockopt
+        mov     rdi, [sock]
+        mov     rsi, __SOL_SOCKET
+        mov     rdx, __SO_REUSEPORT
+        mov     r10, sockopt_on
+        mov     r8, dword 32
+        syscall
+        cmp     rax, 0
+        jne     _server_close
+
         ; Bind
         mov	rax, __NR_bind
         mov     rdi, [sock]            ; socket
         mov     rsi, [sock_address]    ; sockaddr *
-        mov     rdx, dword 16          ; 32-bit sizeof socket address
+        mov     rdx, dword 32          ; 32-bit sizeof socket address
         syscall
         cmp     rax, 0
         jne     _server_close
@@ -78,14 +105,14 @@ _start:
         ; Listen
         mov	rax, __NR_listen
         mov	rdi, [sock]
-        mov	rsi, [max_clients]
+        mov	rsi, MAX_CLIENTS
         syscall
 
 _server_accept:
 
         SECTION .data
 
-        reqbuf  TIMES   buflen  \
+        reqbuf  TIMES   BUFLEN  \
                 db      0
         reqlen  dw      0
 
@@ -106,7 +133,7 @@ _server_accept:
         mov     rax, __NR_read
         mov     rdi, [client]
         mov     rsi, reqbuf
-        mov     rdx, buflen
+        mov     rdx, BUFLEN
         syscall
         mov     [reqlen], rax
 
@@ -117,7 +144,6 @@ _server_accept:
         mov     rdx, [reqlen]
         syscall
 
-        jmp _client_close
 
         ; @TODO handle headers from request buffer
 
