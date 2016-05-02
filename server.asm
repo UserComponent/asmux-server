@@ -6,9 +6,12 @@
 ; @version 0.1.0
 ;=======================================================
 
-CPU     x64
+        CPU     x64
 
-SECTION .data
+        SECTION .data
+
+        filename        db      "index.html", 0
+        filepntr        dq      0
         sock            dq      0
         client          dq      0
         max_clients     dw      10
@@ -31,12 +34,19 @@ SECTION .data
         __NR_bind       equ     49
         __NR_listen     equ     50
 
-SECTION .bss
+
+        SECTION .bss
+
         sock_address    resq    2
 
-SECTION .text
+
+        SECTION .text
+
         global  _start
+
+
 _start:
+
         ; Socket
         mov     rax, __NR_socket
         mov	rdi, __AF_INET
