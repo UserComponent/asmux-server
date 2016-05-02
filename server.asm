@@ -10,6 +10,18 @@
 
         SECTION .data
 
+        ; HTTP Header Constants
+        HTTP_H_200_MSG  db      "HTTP/1.1 200 OK",                        0xa, \
+                                "Content-Type: text/html; charset=UTF-8", 0xa, \
+                                "Content-Encoding: UTF-8",                0xa, \
+                                "Server: Asmux/0.2.0 (Linux x86_64)",     0xa, \
+                                "Connection: close",                      0xa, \
+                                                                          0xa
+        HTTP_H_200_LEN  equ     $ - HTTP_H_200_MSG
+
+        ; @TODO "Date: Weekday, day Month Year hh:mm:ss GMT"
+        ; @TODO "Content-Length: <number>"
+
         ; File / Socket Variables
         filename        db      "index.html", 0
         filepntr        dq      0
@@ -52,7 +64,6 @@
         SECTION .text
 
         global  _start
-
 
 _start:
 
@@ -159,6 +170,14 @@ _server_accept:
         mov     [filepntr], rax
 
         mov     rcx, qword 0
+
+_send_headers:
+        ; Send response headers to client
+        mov     rax, __NR_write
+        mov     rdi, [client]
+        mov     rsi, HTTP_H_200_MSG
+        mov     rdx, HTTP_H_200_LEN
+        syscall
 
 _read_html:
 
