@@ -46,11 +46,15 @@ _start:
         mov     [sock], rax
 
         ; Socket Address
+        push    rbp
+        mov     rbp, rsp
         push	dword	0              ; sa_zero : 64-bit zero-padding
         push	dword	0x0100007F     ; sa_addr : (127.0.0.1) 32-bit IP Address (network byte order)
         push	word	0x401f	       ; sa_port : (8000) 16-bit Port Address (network byte order)
         push	word	__AF_INET      ; sa_family
         mov     [sock_address], rsp    ; Pointer to socket address
+        add     rsp, 12
+        pop     rbp
 
         ; Bind
         mov	rax, __NR_bind
