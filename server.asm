@@ -55,6 +55,7 @@
         __NR_bind       equ     49
         __NR_listen     equ     50
         __NR_setsockopt equ     54
+        __NR_gettimeofday equ   96
 
 
         SECTION .bss
@@ -142,6 +143,11 @@ _server_accept:
         reqlen  dw      0
 
 
+        SECTION .bss
+
+        time    resq    2
+
+
         SECTION .text
 
         ; Accept
@@ -183,6 +189,22 @@ _server_accept:
         mov     rcx, qword 0
 
 _send_headers:
+
+        ; Setup time structure
+        push    rbp
+        mov     rbp, rsp
+        push    qword 1                 ; tv_usec
+        push    qword 0                 ; tv_sec
+        mov     [time], rsp
+        add     rsp, 16
+        pop     rbp
+
+        ; Get time
+        mov     rax, __NR_gettimeofday
+        mov     rdi, [time]
+        mov     rsi, 0
+        syscall
+
         ; Send response headers to client
         mov     rax, __NR_write
         mov     rdi, [client]
