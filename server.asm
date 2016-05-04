@@ -25,6 +25,7 @@
         ; File / Socket Variables
         filename        db      "index.html", 0
         filepntr        dq      0
+        port            dw      "8000"
         sock            dq      0
         client          dq      0
         sockopt_off     dw      0
@@ -63,28 +64,38 @@
 
         SECTION .text
 
+        %include "includes/atoi_32.asm"
+
         global  _start
 
 _start:
 
-        ; Socket
+        ; Setup Port Address (Variable)
+        add     rsp, 16
+        pop     rsi
+        sub     rsp, 16
+        call    atoi_32
+        xchg    ah, al
+        mov     [port], eax
+
+        ; Setup Socket Address Struct
+        push    rbp
+        mov     rbp, rsp
+        push	dword	0              ; sa_zero : 64-bit zero-padding
+        push	dword	0x0100007F     ; sa_addr : (127.0.0.1) 32-bit IP Address (network byte order)
+        push	word	[port]	       ; sa_port : (8000) 16-bit Port Address (network byte order)
+        push	word	__AF_INET      ; sa_family
+        mov     [sock_address], rsp    ; Pointer to socket address
+        add     rsp, 12
+        pop     rbp
+
+        ; Create Socket
         mov     rax, __NR_socket
         mov	rdi, __AF_INET
         mov	rsi, __SOCK_STREAM
         mov 	rdx, __IPPROTO_TCP
         syscall
         mov     [sock], rax
-
-        ; Socket Address
-        push    rbp
-        mov     rbp, rsp
-        push	dword	0              ; sa_zero : 64-bit zero-padding
-        push	dword	0x0100007F     ; sa_addr : (127.0.0.1) 32-bit IP Address (network byte order)
-        push	word	0x401f	       ; sa_port : (8000) 16-bit Port Address (network byte order)
-        push	word	__AF_INET      ; sa_family
-        mov     [sock_address], rsp    ; Pointer to socket address
-        add     rsp, 12
-        pop     rbp
 
         ; Reuse address and port (i.e., restarting)  -- @TODO refactor
         mov     rax, __NR_setsockopt
