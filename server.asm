@@ -188,33 +188,8 @@ _server_accept:
         jle     _client_close           ; @TODO This should be HTTP 404
         mov     [filepntr], rax
 
-        mov     rcx, qword 0
-
-_send_headers:
-
-        ; Setup time structure
-        push    rbp
-        mov     rbp, rsp
-        push    qword 1                 ; tv_usec
-        push    qword 0                 ; tv_sec
-        mov     [time], rsp
-        add     rsp, 16
-        pop     rbp
-
-        ; Get time
-        mov     rax, __NR_gettimeofday
-        mov     rdi, [time]
-        mov     rsi, 0
-        syscall
-
-        ; Send response headers to client
-        mov     rax, __NR_write
-        mov     rdi, [client]
-        mov     rsi, HTTP_H_200_MSG
-        mov     rdx, HTTP_H_200_LEN
-        syscall
-
-        ; Reset readlen to 0
+        ; Reset readlen & rcx to 0
+        mov     rcx, 0
         mov     qword [readlen], 0
 
 _read_html:
@@ -260,6 +235,28 @@ _remalloc:
         jmp     _read_html              ; Keep on reading!
 
 _write_html:
+
+        ; Setup time structure
+        push    rbp
+        mov     rbp, rsp
+        push    qword 1                 ; tv_usec
+        push    qword 0                 ; tv_sec
+        mov     [time], rsp
+        add     rsp, 16
+        pop     rbp
+
+        ; Get time
+        mov     rax, __NR_gettimeofday
+        mov     rdi, [time]
+        mov     rsi, 0
+        syscall
+
+        ; Send response headers to client
+        mov     rax, __NR_write
+        mov     rdi, [client]
+        mov     rsi, HTTP_H_200_MSG
+        mov     rdx, HTTP_H_200_LEN
+        syscall
 
         ; Close html file
         mov     rax, __NR_close
