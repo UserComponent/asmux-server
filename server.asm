@@ -81,12 +81,12 @@ _start:
         ; Setup Socket Address Struct
         push    rbp
         mov     rbp, rsp
-        push	dword	0              ; sa_zero : 64-bit zero-padding
+        push	qword	0              ; sa_zero : 64-bit zero-padding
         push	dword	0x0100007F     ; sa_addr : (127.0.0.1) 32-bit IP Address (network byte order)
         push	word	[port]	       ; sa_port : (8000) 16-bit Port Address (network byte order)
         push	word	__AF_INET      ; sa_family
         mov     [sock_address], rsp    ; Pointer to socket address
-        add     rsp, 12
+        add     rsp, 16
         pop     rbp
 
         ; Create Socket
