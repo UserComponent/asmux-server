@@ -261,6 +261,11 @@ _remalloc:
 
 _write_html:
 
+        ; Close html file
+        mov     rax, __NR_close
+        mov     rdi, [filepntr]
+        syscall
+
         ; Write output buffer to client
         mov     rax, __NR_write
         mov     rdi, [client]
