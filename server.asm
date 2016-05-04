@@ -30,6 +30,7 @@
         client          dq      0
         sockopt_off     dw      0
         sockopt_on      dw      1
+        readlen         dq      0
 
         ; Server / System Constants
         MAX_CLIENTS     equ     10
@@ -49,6 +50,7 @@
         __NR_write      equ     1
         __NR_open       equ     2
         __NR_close      equ     3
+        __NR_brk        equ     12
         __NR_socket     equ     41
         __NR_accept     equ     43
         __NR_shutdown   equ     48      ; @TODO replace close() with shutdown() on sockets
@@ -212,6 +214,9 @@ _send_headers:
         mov     rdx, HTTP_H_200_LEN
         syscall
 
+        ; Reset readlen to 0
+        mov     qword [readlen], 0
+
 _read_html:
 
         SECTION .data
@@ -222,26 +227,46 @@ _read_html:
 
         SECTION .text
 
-        ; Read file contents into response buffer
+
+        ; Read file contents into memory
         mov     rax, __NR_read
         mov     rdi, [filepntr]
         mov     rsi, resbuf
         mov     rdx, BUFLEN
         syscall
 
-        cmp     rax, 1                  ; Check for error / end of reading/writing
-        jl      _client_close           ; Continue to close() if done
+        mov     rcx, rax
+        cmp     rcx, 0                  ; Check for error / end of reading/writing
+        jge     _remalloc               ; Continue and maybe realloc memory
+        jmp     _client_close           ; Read error: close client
 
-        mov     rcx, rax                ; Update response buffer length
+_remalloc:
+
+        cmp     rcx, 0                  ; Check EOF
+        je      _write_html             ; Write output when EOF...
+
+        add     [readlen], rcx          ; Update response content-length
+
+        ; @TODO need to work out the kinks in this
+        cmp     qword [readlen], BUFLEN
+        jle     _read_html
+        mov     rax, resbuf
+        add     rax, [readlen]
+        mov     rdi, rax
+        mov     rax, __NR_brk           ; Allocate space for content in memory
+        syscall
+        mov     [resbuf], rax
+
+        jmp     _read_html              ; Keep on reading!
+
+_write_html:
 
         ; Write output buffer to client
         mov     rax, __NR_write
         mov     rdi, [client]
         mov     rsi, resbuf
-        mov     rdx, rcx
+        mov     rdx, [readlen]
         syscall
-
-        jmp      _read_html              ; Otherwise, keep on reading / writing!
 
 _client_close:
 
