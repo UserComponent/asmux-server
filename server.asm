@@ -8,6 +8,8 @@
 
         CPU     x64
 
+        %define sizeof(x) x %+ _size
+
         SECTION .data
 
         ; HTTP Header Constants
@@ -30,11 +32,11 @@
         client          dq      0
         sockopt_off     dw      0
         sockopt_on      dw      1
-        readlen         dq      0
 
         ; Server / System Constants
+        FILENAME_L      equ     $ - filename
         MAX_CLIENTS     equ     10
-        BUFLEN          equ     512
+        BUFLEN          equ     1048
         __O_RDONLY      equ     00
         __O_WRONLY      equ     01
         __O_RDWR        equ     02
@@ -50,6 +52,7 @@
         __NR_write      equ     1
         __NR_open       equ     2
         __NR_close      equ     3
+        __NR_fstat      equ     5
         __NR_brk        equ     12
         __NR_socket     equ     41
         __NR_accept     equ     43
@@ -69,7 +72,29 @@
 
         %include "includes/atoi_32.asm"
 
+        STRUC            stat_s
+        .st_dev:         resq    1
+        .st_ino:         resq    1
+        .st_mode:        resd    1
+        .st_nlink:       resd    1
+        .st_uid:         resd    1
+        .st_gid:         resd    1
+        .st_rdev:        resq    1
+        .st_size:        resq    1
+        .st_blksize:     resq    1
+        .st_blocks:      resq    1
+        .st_atime:       resq    1
+        .st_atime_nsec:  resq    1
+        .st_mtime:       resq    1
+        .st_mtime_nsec:  resq    1
+        .st_ctime:       resq    1
+        .st_ctime_nsec:  resq    1
+        .unused4:        resq    1
+        .unused5:        resq    1
+        ENDSTRUC
+
         global  _start
+        extern  _end
 
 _start:
 
@@ -188,51 +213,52 @@ _server_accept:
         jle     _client_close           ; @TODO This should be HTTP 404
         mov     [filepntr], rax
 
-        ; Reset readlen & rcx to 0
-        mov     rcx, 0
-        mov     qword [readlen], 0
-
 _read_html:
 
-        SECTION .data
+        SECTION .bss
 
-        resbuf  TIMES   BUFLEN  \
-                db      0
+        stat            resb    sizeof(stat_s)
+        readlen         resd    1
+        brkaddr         resq    1
+        tmpbuf          resq    1
 
 
         SECTION .text
 
+        ; Fill stat structure with file information
+        mov     rax, __NR_fstat
+        mov     rdi, [filepntr]
+        mov     rsi, stat
+        syscall
 
-        ; Read file contents into memory
+        ; Check for errors
+        cmp     rax, 0
+        jne     _client_close
+
+        ; Save current break location
+        mov     rax, __NR_brk
+        xor     rdi, rdi
+        syscall
+        mov     [brkaddr], rax
+        mov     [tmpbuf], rax
+        push    rax
+
+        ; Extend [.bss] by file size
+        mov     rax, __NR_brk
+        pop     rdi
+        add     rdi, qword [stat + 48]
+        syscall
+
+        ; Read file contents into buffer
         mov     rax, __NR_read
         mov     rdi, [filepntr]
-        mov     rsi, resbuf
-        mov     rdx, BUFLEN
+        mov     rsi, tmpbuf
+        mov     rdx, qword [stat + 48]
         syscall
 
-        mov     rcx, rax
-        cmp     rcx, 0                  ; Check for error / end of reading/writing
-        jge     _remalloc               ; Continue and maybe realloc memory
-        jmp     _client_close           ; Read error: close client
-
-_remalloc:
-
-        cmp     rcx, 0                  ; Check EOF
-        je      _write_html             ; Write output when EOF...
-
-        add     [readlen], rcx          ; Update response content-length
-
-        ; @TODO need to work out the kinks in this
-        cmp     qword [readlen], BUFLEN
-        jle     _read_html
-        mov     rax, resbuf
-        add     rax, [readlen]
-        mov     rdi, rax
-        mov     rax, __NR_brk           ; Allocate space for content in memory
-        syscall
-        mov     [resbuf], rax
-
-        jmp     _read_html              ; Keep on reading!
+        cmp     rax, 0                  ; Check for error / end of reading/writing
+        jl      _client_close           ; Read error: close client
+        mov     [readlen], rax          ; Update readlen (bytes read)
 
 _write_html:
 
@@ -266,8 +292,14 @@ _write_html:
         ; Write output buffer to client
         mov     rax, __NR_write
         mov     rdi, [client]
-        mov     rsi, resbuf
+        mov     rsi, tmpbuf
         mov     rdx, [readlen]
+        syscall
+
+        ; @TODO brkaddr showing '0' in trace
+        ; Free up memory used by tmpbuf
+        mov     rax, __NR_brk
+        mov     rdi, [brkaddr]
         syscall
 
 _client_close:
