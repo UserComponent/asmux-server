@@ -8,8 +8,6 @@
 
         CPU     x64
 
-        %define sizeof(x) x %+ _size
-
         SECTION .data
 
         ; HTTP Header Constants
@@ -71,27 +69,6 @@
         SECTION .text
 
         %include "includes/atoi_32.asm"
-
-        STRUC            stat_s
-        .st_dev:         resq    1
-        .st_ino:         resq    1
-        .st_mode:        resd    1
-        .st_nlink:       resd    1
-        .st_uid:         resd    1
-        .st_gid:         resd    1
-        .st_rdev:        resq    1
-        .st_size:        resq    1
-        .st_blksize:     resq    1
-        .st_blocks:      resq    1
-        .st_atime:       resq    1
-        .st_atime_nsec:  resq    1
-        .st_mtime:       resq    1
-        .st_mtime_nsec:  resq    1
-        .st_ctime:       resq    1
-        .st_ctime_nsec:  resq    1
-        .unused4:        resq    1
-        .unused5:        resq    1
-        ENDSTRUC
 
         global  _start
         extern  _end
@@ -213,14 +190,38 @@ _server_accept:
         jle     _client_close           ; @TODO This should be HTTP 404
         mov     [filepntr], rax
 
-_read_html:
+_output:
+
+        STRUC           stat_s
+        .st_dev         resq    1
+        .st_ino         resq    1
+        .st_nlink       resw    1
+        .st_mode        rest    1
+        .st_uid         resd    1
+        .st_gid         resd    1
+        .pad0           resd    1
+        .st_rdev        resq    1
+        .st_size        resq    1
+        .st_blksize     resq    1
+        .st_blocks      resq    1
+        .st_atime       resq    1
+        .st_atimensec   resq    1
+        .st_mtime       resq    1
+        .st_mtimensec   resq    1
+        .st_ctime       resq    1
+        .st_ctimensec   resq    1
+        .__unused       resq    3
+        ENDSTRUC
 
         SECTION .bss
 
-        stat            resb    sizeof(stat_s)
-        readlen         resd    1
+        stat            resb    stat_s_size
         brkaddr         resq    1
-        tmpbuf          resq    1
+        tmpbuf          resb    1
+
+        SECTION .data
+
+        readlen         dq      0
 
 
         SECTION .text
@@ -246,21 +247,10 @@ _read_html:
         ; Extend [.bss] by file size
         mov     rax, __NR_brk
         pop     rdi
-        add     rdi, qword [stat + 48]
+        add     rdi, qword [stat + stat_s.st_size]
         syscall
 
-        ; Read file contents into buffer
-        mov     rax, __NR_read
-        mov     rdi, [filepntr]
-        mov     rsi, tmpbuf
-        mov     rdx, qword [stat + 48]
-        syscall
-
-        cmp     rax, 0                  ; Check for error / end of reading/writing
-        jl      _client_close           ; Read error: close client
-        mov     [readlen], rax          ; Update readlen (bytes read)
-
-_write_html:
+.send_headers:
 
         ; Setup time structure
         push    rbp
@@ -284,16 +274,39 @@ _write_html:
         mov     rdx, HTTP_H_200_LEN
         syscall
 
-        ; Close html file
-        mov     rax, __NR_close
+.buffer_tmp:
+
+        ; Read file contents into buffer
+        mov     rax, __NR_read
         mov     rdi, [filepntr]
+        mov     rsi, tmpbuf
+        mov     rdx, BUFLEN
         syscall
+
+        cmp     rax, 0                  ; Check for error / end of reading/writing
+        jl      _client_close           ; Read error: close client
+
+        cmp     rax, 0
+        je      .cleanup                ; Reached EOF
+
+        mov     rbx, rax
+        add     [readlen], rax          ; Update readlen (bytes read total)
 
         ; Write output buffer to client
         mov     rax, __NR_write
         mov     rdi, [client]
         mov     rsi, tmpbuf
-        mov     rdx, [readlen]
+        mov     rdx, rbx
+        syscall
+
+        ; Rinse and repeat until finished
+        jmp     .buffer_tmp
+
+.cleanup:
+
+        ; Close html file
+        mov     rax, __NR_close
+        mov     rdi, [filepntr]
         syscall
 
         ; @TODO brkaddr showing '0' in trace
